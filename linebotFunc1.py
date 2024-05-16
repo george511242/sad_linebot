@@ -6,6 +6,9 @@ from linebot import  LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage,TextSendMessage, ImageSendMessage, StickerSendMessage, LocationSendMessage, QuickReply, QuickReplyButton, MessageAction
 import psycopg2
+from linebot.models import MessageEvent, TextMessage, PostbackEvent, TextSendMessage, TemplateSendMessage, ConfirmTemplate, MessageTemplateAction, ButtonsTemplate, PostbackTemplateAction, URITemplateAction, CarouselTemplate, CarouselColumn, ImageCarouselTemplate, ImageCarouselColumn
+from urllib.parse import parse_qsl
+
 
 # 讀取資料庫密碼
 with open('db_password.txt', 'r') as file:
@@ -109,6 +112,58 @@ def handle_message(event):
             line_bot_api.reply_message(event.reply_token,message)
         except:
             line_bot_api.reply_message(event.reply_token,TextSendMessage(text='發生錯誤！'))
+
+def sendCarousel(event):  #轉盤樣板
+    try:
+        message = TemplateSendMessage(
+            alt_text='轉盤樣板',
+            template=CarouselTemplate(
+                columns=[
+                    CarouselColumn(
+                        thumbnail_image_url='https://i.imgur.com/4QfKuz1.png',
+                        title='這是樣板一',
+                        text='第一個轉盤樣板',
+                        actions=[
+                            MessageTemplateAction(
+                                label='文字訊息一',
+                                text='賣披薩'
+                            ),
+                            URITemplateAction(
+                                label='連結文淵閣網頁',
+                                uri='http://www.e-happy.com.tw'
+                            ),
+                            PostbackTemplateAction(
+                                label='回傳訊息一',
+                                data='action=sell&item=披薩'
+                            ),
+                        ]
+                    ),
+                    CarouselColumn(
+                        thumbnail_image_url='https://i.imgur.com/qaAdBkR.png',
+                        title='這是樣板二',
+                        text='第二個轉盤樣板',
+                        actions=[
+                            MessageTemplateAction(
+                                label='文字訊息二',
+                                text='賣飲料'
+                            ),
+                            URITemplateAction(
+                                label='連結台大網頁',
+                                uri='http://www.ntu.edu.tw'
+                            ),
+                            PostbackTemplateAction(
+                                label='回傳訊息二',
+                                data='action=sell&item=飲料'
+                            ),
+                        ]
+                    )
+                ]
+            )
+        )
+        line_bot_api.reply_message(event.reply_token,message)
+    except:
+        line_bot_api.reply_message(event.reply_token,TextSendMessage(text='發生錯誤！'))
+
 
 if __name__ == '__main__':
     app.run()

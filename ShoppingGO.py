@@ -1,25 +1,17 @@
-import uuid
-import ast
-import datetime
-import shortuuid
-import psycopg2
-from flask import Flask, request, abort, redirect, session, url_for, render_template_string
-from linebot import LineBotApi, WebhookHandler, WebhookParser
-from linebot.exceptions import InvalidSignatureError
+from flask import Flask
+app = Flask(__name__)
 
-from linebot.models import (
-    MessageEvent, TextMessage, PostbackEvent, TextSendMessage, TemplateSendMessage, 
-    ConfirmTemplate, MessageTemplateAction, ButtonsTemplate, 
-    PostbackTemplateAction, URITemplateAction, CarouselTemplate, CarouselColumn, ImageCarouselTemplate, ImageCarouselColumn, 
-    QuickReply, QuickReplyButton, MessageAction, ButtonsTemplate, URIAction)
+from flask import request, abort
+from linebot import  LineBotApi, WebhookHandler
+from linebot.exceptions import InvalidSignatureError
+from linebot.models import MessageEvent, TextMessage,TextSendMessage, ImageSendMessage, StickerSendMessage, LocationSendMessage, QuickReply, QuickReplyButton, MessageAction
+import psycopg2
+from linebot.models import MessageEvent, TextMessage, PostbackEvent, TextSendMessage, TemplateSendMessage, ConfirmTemplate, MessageTemplateAction, ButtonsTemplate, PostbackTemplateAction, URITemplateAction, CarouselTemplate, CarouselColumn, ImageCarouselTemplate, ImageCarouselColumn
 from urllib.parse import parse_qsl
 
-
 # 讀取資料庫密碼
-app = Flask(__name__)
 with open('db_password.txt', 'r') as file:
     db_password = file.read().strip()
-
 
 # 資料庫連接設定
 dbname = 'ShoppingGO'
@@ -27,10 +19,15 @@ db_user = 'postgres'      # 請更換為你的資料庫用戶名
 db_host = 'localhost'     # 如果資料庫在本地，否則更換為相應的主機名
 db_port = '5432'          # 資料庫服務器端口，預設為5432
 
-
 # 建立資料庫連接
 conn = psycopg2.connect(dbname=dbname, user=db_user, password=db_password, host=db_host, port=db_port)
 
+def fetch_data_from_db():
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM goods;")
+    rows = cursor.fetchall()
+    cursor.close()
+    return rows
 
 def get_districts():
     cursor = conn.cursor()
@@ -40,7 +37,6 @@ def get_districts():
     group_idx = [r[0] for r in rows]
     cursor.close()
     return districts, group_idx
-
 
 def get_goods_from_group(group_name, group_dict):
     # group_id (大安區) --> seller_participation --> seller_id --> goods
@@ -53,10 +49,9 @@ def get_goods_from_group(group_name, group_dict):
     # Get goods by seller id
     if row:
         cursor = conn.cursor()
-        query = "SELECT goods.goods_picture, goods.tag, goods.goods_name, go_activity.unite_price, \
-                go_activity.min_quantity, go_activity.group_id, goods.goods_id, go_activity.seller_id, go_activity.activity_id FROM goods \
-                JOIN go_activity ON goods.goods_id = go_activity.goods_id \
-                WHERE go_activity.seller_id = %s;"
+        query = "SELECT goods.goods_picture, goods.tag, goods.goods_name, goods.unite_price, goods.min_quantity, goods.goods_description\
+                FROM goods\
+                WHERE goods.seller_id = %s;"
         cursor.execute(query, (row[0],))
         rows = cursor.fetchall()
         return rows
@@ -64,11 +59,14 @@ def get_goods_from_group(group_name, group_dict):
         
 
 
+def create_order():
+    # create go activity
+    return 0
+
+
 """Global variables"""
 line_bot_api = LineBotApi('/RP5ONQZb3KjMUm1bPhGSaZRufUgaCi01uptj6/eNAHlCy4uQMfwrsHo2O0IX5sTpq+wiuI3VgCiQSXj/xShEAYpkal+uqQwL19a1ZBPTQidWbiU6782KJUUEIm/2ljUCggyZWLYns68otxtJcdbTAdB04t89/1O/w1cDnyilFU=')
 handler = WebhookHandler('b4db5feb35a9390ea7b07008b1abdcd7')# b4db5feb35a9390ea7b07008b1abdcd7
-parser = WebhookParser('b4db5feb35a9390ea7b07008b1abdcd7')# b4db5feb35a9390ea7b07008b1abdcd7
-user_states = {}
 areas, group_ids = get_districts()
 group_dict = {area: group_id for area, group_id in zip(areas, group_ids)}
 
@@ -82,53 +80,12 @@ def callback():
         handler.handle(body, signature)
     except InvalidSignatureError:
         abort(400)
-
-    events = parser.parse(body, signature)
-    for event in events:
-        if isinstance(event, PostbackEvent):
-            handle_postback(event)
     return 'OK'
-
-
-def handle_event(event):
-    if isinstance(event, PostbackEvent):
-        handle_postback(event)
-
-
-
-def handle_postback(event):
-    data = event.postback.data
-        
-    # Assuming the data is in the format 'action=buy&item=item_name'
-    action, item = data.split('&')
-    _, action_value = action.split('=')
-    _, item_name = item.split('=')
-
-    if action_value == 'buy':
-        process_purchase(event, list(ast.literal_eval(item_name)))
-
-
-def process_purchase(event, row):
-    # Insert into database "order"
-    cursor = conn.cursor()
-    query = "INSERT INTO orders (buyer_id, activity_id, quantity, order_time, order_status, comment, star_rating) VALUES (%s, %s, %s, %s, %s, %s, %s)"
-    user_id = event.source.user_id
-    q_data = ('Buffet@gmail.com.tw', row[8], 3, datetime.datetime.now(), '已下單', '', 3) 
-    cursor.execute(query, q_data)
-    conn.commit()
-    
-    # Sending a confirmation message to the user
-    line_bot_api.reply_message(
-        event.reply_token,
-        TextSendMessage(text=f"Thank you for purchasing {row[2]}!")
-    )
-
 
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
 
     mtext = event.message.text
-    
     if mtext == '@傳送文字':
         try:
             message = TextSendMessage(  
@@ -138,7 +95,7 @@ def handle_message(event):
         except:
             line_bot_api.reply_message(event.reply_token,TextSendMessage(text='發生錯誤！'))
 
-    elif mtext in areas: # Deal with the data in districts picked
+    if mtext in areas:
         try:
             # Get group's goods by seller_participation
             data = get_goods_from_group(mtext, group_dict)
@@ -146,8 +103,10 @@ def handle_message(event):
             # Set reply messages    
             if data == []:
                 reply_message = "沒有商品"
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply_message))
             else:
+                reply_message = f"以下是正在{mtext}團購的商品:\n"
+                for row in data:
+                    reply_message += f"商品名: {row[2]}\n商品標籤: {row[1]}\n商品價錢: {row[3]}\n最低開團人數下限: {row[4]}\n"
                 columns = []
                 for row in data:
                     columns.append(
@@ -158,8 +117,8 @@ def handle_message(event):
                             
                             actions=[
                                 PostbackTemplateAction(
-                                    label='下單',
-                                    data=f'action=buy&item={row}'
+                                    label='購買此商品',
+                                    data=f'action=buy&item={row[1]}'  # Adjust as necessary
                                 ),
                                 URITemplateAction(
                                     label='更多資訊',
@@ -173,13 +132,15 @@ def handle_message(event):
                         )
                     )
                 sendCarousel(event, columns)
-                
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply_message))
         except Exception as e:
             print(f"Error fetching data from database: {e}")
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text='發生錯誤！'))
-            
-            
-    elif mtext == '@獲取商品':
+
+    if mtext == '@轉盤樣板':
+        sendCarousel(event)
+
+    if mtext == '@獲取商品':
         try:
             items = [
                 QuickReplyButton(
@@ -193,19 +154,9 @@ def handle_message(event):
             line_bot_api.reply_message(event.reply_token, message)
         except Exception as e:
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text='發生錯誤：' + str(e)))
-           
-           
-    elif mtext == '@登入會員':
-        buttons_template = ButtonsTemplate(
-            title='登入', text='點擊下方登入', actions=[
-                URIAction(label='登入', uri='https://your-auth-server.com/login')
-            ]
-        )
-        template_message = TemplateSendMessage(alt_text='登入', template=buttons_template)
-        line_bot_api.reply_message(event.reply_token, template_message)
-
             
-"""Design for 轉盤"""            
+            
+            
 def sendCarousel(event, columns):  #轉盤樣板
     try:
         message = TemplateSendMessage(
@@ -216,7 +167,6 @@ def sendCarousel(event, columns):  #轉盤樣板
     except:
         line_bot_api.reply_message(event.reply_token,TextSendMessage(text='發生錯誤！'))
         
-
         
 if __name__ == '__main__':
     app.run()
